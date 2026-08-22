@@ -59,6 +59,23 @@ func TestStartAlreadyRunningIsIdempotent(t *testing.T) {
 	}
 	if got.PID != rec.PID || got.VNCDisp != 1 {
 		t.Fatalf("live record changed: pid=%d vnc=%d, want pid=%d vnc=1", got.PID, got.VNCDisp, rec.PID)
+ 	}
+}
+
+func TestExitOnRebootEnabled(t *testing.T) {
+	if exitOnRebootEnabled(&record{}) {
+		t.Fatal("standalone VM must keep normal reboot behavior by default")
+	}
+	t.Setenv("COCOON_MACOS_EXIT_ON_REBOOT", "true")
+	if !exitOnRebootEnabled(&record{}) {
+		t.Fatal("external supervisor environment must enable cold relaunch behavior")
+	}
+	t.Setenv("COCOON_MACOS_EXIT_ON_REBOOT", "invalid")
+	if exitOnRebootEnabled(&record{}) {
+		t.Fatal("invalid environment value must not change reboot behavior")
+	}
+	if !exitOnRebootEnabled(&record{ExitOnReboot: true}) {
+		t.Fatal("persisted VM setting must enable cold relaunch behavior")
 	}
 }
 
