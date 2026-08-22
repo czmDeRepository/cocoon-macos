@@ -146,6 +146,10 @@ func (h *Handler) create(cmd *cobra.Command, image string) (*record, error) {
 	if err = requireCNIVNCPassword(netMode == netCNI, vnc, vncPass); err != nil {
 		return nil, err
 	}
+	storage, err := storageFromFlag(cmd)
+	if err != nil {
+		return nil, err
+	}
 	oc, code, varsTmpl, err := resolveFirmware(cmd)
 	if err != nil {
 		return nil, err
@@ -155,6 +159,11 @@ func (h *Handler) create(cmd *cobra.Command, image string) (*record, error) {
 		return nil, err
 	}
 	ctx := cliutil.CommandContext(cmd)
+	storage, err = resizeSystemDisk(ctx, overlay, storage)
+	if err != nil {
+		_ = os.RemoveAll(dir)
+		return nil, err
+	}
 	cpus, _ := cmd.Flags().GetInt("cpus")
 	mem, _ := cmd.Flags().GetString("memory")
 	ssh, _ := cmd.Flags().GetInt("ssh-port")
@@ -163,7 +172,7 @@ func (h *Handler) create(cmd *cobra.Command, image string) (*record, error) {
 	exitOnReboot, _ := cmd.Flags().GetBool("exit-on-reboot")
 	r := &record{
 		Name: name, Image: image, ImageDigest: digest, Disk: overlay, OVMFCode: code, OVMFVars: ovmfVars,
-		CPUs: cpus, Memory: mem, VNCDisp: vnc, SSHPort: ssh, VNCPass: vncPass, NetMode: netMode, Tap: tap, Hugepages: huge,
+		CPUs: cpus, Memory: mem, Storage: storage, VNCDisp: vnc, SSHPort: ssh, VNCPass: vncPass, NetMode: netMode, Tap: tap, Hugepages: huge,
 		ExitOnReboot: exitOnReboot,
 		VMID:         utils.GenerateID(), Created: time.Now().Format(time.RFC3339),
 	}
