@@ -32,6 +32,13 @@ func (h *Handler) clone(cmd *cobra.Command, srcRec *record, name string) (retErr
 	if err := requireCNIVNCPassword(netMode == netCNI, vnc, vncPass); err != nil {
 		return err
 	}
+	cpus := srcRec.CPUs
+	if cmd.Flags().Changed("cpus") {
+		cpus, _ = cmd.Flags().GetInt("cpus")
+	}
+	if err := validateMacOSCPUs(cpus); err != nil {
+		return err
+	}
 	// SRC's disk names are reserved: extra --data-disk specs must not collide and the combined count still honors the AHCI cap
 	reserved := make([]string, len(srcRec.DataDisks))
 	for i, p := range srcRec.DataDisks {
@@ -74,12 +81,9 @@ func (h *Handler) clone(cmd *cobra.Command, srcRec *record, name string) (retErr
 	}
 	r = &record{
 		Name: name, Image: srcRec.Image, ImageDigest: digest, Disk: overlay,
-		OVMFCode: srcRec.OVMFCode, OVMFVars: ovmfVars, CPUs: srcRec.CPUs, Memory: srcRec.Memory, Storage: storage,
+		OVMFCode: srcRec.OVMFCode, OVMFVars: ovmfVars, CPUs: cpus, Memory: srcRec.Memory, Storage: storage,
 		DataDisks: append(copied, newDisks...),
 		VMID:      utils.GenerateID(), Created: time.Now().Format(time.RFC3339),
-	}
-	if cmd.Flags().Changed("cpus") {
-		r.CPUs, _ = cmd.Flags().GetInt("cpus")
 	}
 	if cmd.Flags().Changed("memory") {
 		r.Memory, _ = cmd.Flags().GetString("memory")

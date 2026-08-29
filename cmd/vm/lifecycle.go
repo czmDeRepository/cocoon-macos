@@ -90,9 +90,6 @@ func (h *Handler) Start(cmd *cobra.Command, args []string) error {
 				return nil
 			}
 			r.VNCDisp, r.VNCPass = vnc, vncPass
-			if cmd.Flags().Changed("exit-on-reboot") {
-				r.ExitOnReboot, _ = cmd.Flags().GetBool("exit-on-reboot")
-			}
 			if err := h.launch(cmd, dir, r); err != nil {
 				return err
 			}
@@ -173,6 +170,10 @@ func (h *Handler) create(cmd *cobra.Command, image, name string) (r *record, ret
 	if err != nil {
 		return nil, err
 	}
+	cpus, _ := cmd.Flags().GetInt("cpus")
+	if err = validateMacOSCPUs(cpus); err != nil {
+		return nil, err
+	}
 	vnc, _ := cmd.Flags().GetInt("vnc")
 	vncPass, _ := cmd.Flags().GetString("vnc-password")
 	netMode, _ := cmd.Flags().GetString("net")
@@ -202,7 +203,6 @@ func (h *Handler) create(cmd *cobra.Command, image, name string) (r *record, ret
 		_ = os.RemoveAll(dir)
 		return nil, err
 	}
-	cpus, _ := cmd.Flags().GetInt("cpus")
 	mem, _ := cmd.Flags().GetString("memory")
 	ssh, _ := cmd.Flags().GetInt("ssh-port")
 	tap, _ := cmd.Flags().GetString("tap")
@@ -226,6 +226,13 @@ func (h *Handler) create(cmd *cobra.Command, image, name string) (r *record, ret
 		return nil, err
 	}
 	return r, saveRec(dir, r)
+}
+
+func validateMacOSCPUs(cpus int) error {
+	if cpus < 1 || cpus%2 != 0 {
+		return fmt.Errorf("--cpus must be a positive even number, got %d", cpus)
+	}
+	return nil
 }
 
 // cleanupFailedVM makes create/run transactional. It uses an uncanceled,
@@ -276,9 +283,6 @@ func (h *Handler) launch(cmd *cobra.Command, dir string, r *record) error {
 	// CNI: a 127.0.0.1 VNC inside the netns is unreachable; use a unix socket fronted by startVNCProxy
 	if r.Netns != "" && r.VNCDisp >= 0 {
 		spec.VNCSock = filepath.Join(dir, vncSockName)
-	}
-	if err := spec.Validate(); err != nil {
-		return fmt.Errorf("invalid macOS VM resources: %w", err)
 	}
 	pidfile := filepath.Join(dir, "qemu.pid")
 	args := append(spec.Args(), "-daemonize", "-pidfile", pidfile)

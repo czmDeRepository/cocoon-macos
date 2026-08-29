@@ -70,16 +70,25 @@ func storageFromFlag(cmd *cobra.Command) (int64, error) {
 	if strings.TrimSpace(raw) == "" {
 		return 0, nil
 	}
-	parsed := strings.TrimSpace(raw)
-	if strings.HasSuffix(strings.ToLower(parsed), "i") {
-		parsed = parsed[:len(parsed)-1]
-	}
-	n, err := units.RAMInBytes(parsed)
+	n, err := parseSize(raw)
 	if err != nil {
 		return 0, fmt.Errorf("invalid --storage %q: %w", raw, err)
 	}
+	return n, nil
+}
+
+// parseSize accepts Docker and Kubernetes quantity spellings such as 20G, 20Gi and 20GiB.
+func parseSize(raw string) (int64, error) {
+	parsed := strings.TrimSpace(raw)
+	if strings.HasSuffix(strings.ToLower(parsed), "i") {
+		parsed += "B"
+	}
+	n, err := units.RAMInBytes(parsed)
+	if err != nil {
+		return 0, err
+	}
 	if n <= 0 {
-		return 0, fmt.Errorf("invalid --storage %q: size must be positive", raw)
+		return 0, errors.New("size must be positive")
 	}
 	return n, nil
 }

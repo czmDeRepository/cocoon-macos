@@ -44,17 +44,9 @@ type Spec struct {
 	QMPSock string
 }
 
-// Validate rejects invalid CPU counts before QEMU builds the topology.
-func (s Spec) Validate() error {
-	if s.CPUs < 1 {
-		return fmt.Errorf("cpus must be greater than zero: %d", s.CPUs)
-	}
-	return nil
-}
-
 // Args returns the qemu-system-x86_64 argument vector for the macOS guest.
-// Callers must validate the spec before launching QEMU.
 func (s Spec) Args() []string {
+	cores := max(s.CPUs/2, 1)
 	varsFmt := "raw"
 	if IsQcow2NVRAM(s.OVMFVars) {
 		varsFmt = "qcow2"
@@ -70,10 +62,7 @@ func (s Spec) Args() []string {
 		"-enable-kvm", "-m", s.Memory,
 		"-cpu", macOSCPU,
 		"-machine", machine,
-		// Declare every topology dimension. Leaving threads implicit lets QEMU
-		// derive surprising SMT layouts (for example, 3 threads on one core for
-		// 3 vCPUs), which macOS may boot very slowly or fail to initialize.
-		"-smp", fmt.Sprintf("%d,cores=%d,threads=1,sockets=1", s.CPUs, s.CPUs),
+		"-smp", fmt.Sprintf("%d,cores=%d,sockets=1", s.CPUs, cores),
 		"-device", "qemu-xhci,id=xhci",
 		"-device", "usb-kbd,bus=xhci.0",
 		"-device", "usb-tablet,bus=xhci.0",
@@ -89,8 +78,7 @@ func (s Spec) Args() []string {
 		"-device", "vmware-svga",
 	}
 	if s.ExitOnReboot {
-		// A macOS warm reset can stall indefinitely during early boot under KVM.
-		// Exit QEMU so an external owner can relaunch the guest cold instead.
+		// supervisor-owned guest: a reboot request exits QEMU so the owner relaunches it cold.
 		a = append(a, "-no-reboot")
 	}
 	a = append(memBackend, a...) // -object must precede the -machine memory-backend reference
