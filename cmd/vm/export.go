@@ -20,9 +20,17 @@ const exportRestartTimeout = 2 * time.Minute
 
 func (h *Handler) Export(cmd *cobra.Command, args []string) error {
 	ctx := cliutil.CommandContext(cmd)
-	vmName, destination := args[0], args[1]
-	if err := cmdimage.ValidatePushReference(destination); err != nil {
-		return err
+	vmName := args[0]
+	localName, _ := cmd.Flags().GetString("local-name")
+	var destination string
+	if len(args) == 2 {
+		destination = args[1]
+		if err := cmdimage.ValidatePushReference(destination); err != nil {
+			return err
+		}
+	}
+	if destination == "" && localName == "" {
+		return errors.New("either OCI REF or --local-name is required")
 	}
 	tmp, err := os.CreateTemp(home.Dir(cmd), ".cocoon-macos-export-*.qcow2")
 	if err != nil {
@@ -76,25 +84,53 @@ func (h *Handler) Export(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("export VM %s: %w", vmName, exportErr)
 	}
 
-	desc, err := cmdimage.PushCloudImage(ctx, destination, tmpPath, map[string]string{
-		"cocoonstack.os.name":   "macos",
-		"cocoonstack.source.vm": vmName,
-	})
-	if err != nil {
-		return fmt.Errorf("push cloud image: %w", err)
+	var exportedDigest string
+	if destination != "" {
+		desc, pushErr := cmdimage.PushCloudImage(ctx, destination, tmpPath, map[string]string{
+			"cocoonstack.os.name":   "macos",
+			"cocoonstack.source.vm": vmName,
+		})
+		if pushErr != nil {
+			return fmt.Errorf("push cloud image: %w", pushErr)
+		}
+		exportedDigest = desc.Digest.String()
 	}
-	localName, _ := cmd.Flags().GetString("local-name")
 	if localName != "" {
-		_, store, openErr := home.OpenStore(cmd)
-		if openErr != nil {
-			return fmt.Errorf("pushed %s as %s, but opening the local cloud-image store failed: %w", destination, desc.Digest, openErr)
+		localDigest, retainErr := retainLocalExport(ctx, cmd, destination, exportedDigest, localName, tmpPath)
+		if retainErr != nil {
+			return retainErr
 		}
-		if importErr := store.Import(ctx, localName, progress.Nop, tmpPath); importErr != nil {
-			return fmt.Errorf("pushed %s as %s, but retaining local cloud image %s failed: %w", destination, desc.Digest, localName, importErr)
+		if destination == "" {
+			exportedDigest = localDigest
 		}
 	}
-	fmt.Println(desc.Digest)
+	fmt.Println(exportedDigest)
 	return nil
+}
+
+func retainLocalExport(ctx context.Context, cmd *cobra.Command, destination, digest, localName, path string) (string, error) {
+	_, store, err := home.OpenStore(cmd)
+	if err != nil {
+		return "", exportLocalError(destination, digest, "opening the local cloud-image store", localName, err)
+	}
+	if importErr := store.Import(ctx, localName, progress.Nop, path); importErr != nil {
+		return "", exportLocalError(destination, digest, "retaining local cloud image", localName, importErr)
+	}
+	image, inspectErr := store.Inspect(ctx, localName)
+	if inspectErr != nil {
+		return "", exportLocalError(destination, digest, "inspecting retained local cloud image", localName, inspectErr)
+	}
+	if image == nil || image.ID == "" {
+		return "", exportLocalError(destination, digest, "inspecting retained local cloud image", localName, errors.New("empty image digest"))
+	}
+	return image.ID, nil
+}
+
+func exportLocalError(destination, digest, action, localName string, err error) error {
+	if destination == "" {
+		return fmt.Errorf("%s %s failed: %w", action, localName, err)
+	}
+	return fmt.Errorf("pushed %s as %s, but %s %s failed: %w", destination, digest, action, localName, err)
 }
 
 func exportRestartVNC(cmd *cobra.Command, r *record) (int, string) {

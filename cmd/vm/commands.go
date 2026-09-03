@@ -115,14 +115,14 @@ func Command(h Actions) *cobra.Command {
 	addVMFlags(cloneCmd) // loader is inherited from SRC
 
 	exportCmd := &cobra.Command{
-		Use:   "export VM REF",
-		Short: "Stop, flatten, restart, and publish a VM as a qcow2 OCI artifact",
-		Args:  cobra.ExactArgs(2),
+		Use:   "export VM [REF]",
+		Short: "Stop, flatten, restart, and retain a VM locally and/or publish it as a qcow2 OCI artifact",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE:  h.Export,
 	}
 	exportCmd.Flags().Int("vnc", -1, "VNC display number for the restarted VM; omit to preserve the current display")
 	exportCmd.Flags().String("vnc-password", "", "VNC password for the restarted VM; omit to preserve the in-memory password when available (required with CNI VNC)")
-	exportCmd.Flags().String("local-name", "", "also retain the exported qcow2 in the local cloud-image store under this name")
+	exportCmd.Flags().String("local-name", "", "retain the exported qcow2 in the local cloud-image store under this name (required when REF is omitted)")
 
 	vmCmd.AddCommand(vncProxyCommand())
 	vmCmd.AddCommand(createCmd, runCmd, startCmd, stopCmd, listCmd, inspectCmd, consoleCmd, rmCmd,
